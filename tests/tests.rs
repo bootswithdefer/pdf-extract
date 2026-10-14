@@ -39,6 +39,11 @@ fn extract_expected_text() {
         // after all three, so this asserts that the bad operators are skipped
         // and parsing continues, not merely that nothing panicked.
         expected!("malformed-text-operators.pdf", "AAA"),
+        // A complete, valid xref table that startxref does not address -- the
+        // offset points into the middle of an object. The whole document used
+        // to be lost with "invalid file trailer"; it is now recovered by
+        // correcting the pointer.
+        expected!("broken-startxref.pdf", "AAA"),
     ];
     for doc in docs {
         doc.test();

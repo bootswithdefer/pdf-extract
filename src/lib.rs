@@ -2255,12 +2255,196 @@ pub fn print_metadata(doc: &Document) {
     dlog!("Type: {:?}", get_pages(&doc).get(b"Type").and_then(|x| x.as_name()).unwrap());
 }
 
+/// Parse an `N G obj` header at the start of `s`.
+fn parse_obj_header(s: &[u8]) -> Option<(u32, u16)> {
+    let mut i = 0;
+    while matches!(s.get(i), Some(c) if c.is_ascii_digit()) { i += 1; }
+    if i == 0 || i > 10 { return None; }
+    let num = std::str::from_utf8(&s[..i]).ok()?.parse::<u32>().ok()?;
+    if s.get(i) != Some(&b' ') { return None; }
+    while s.get(i) == Some(&b' ') { i += 1; }
+    let gen_start = i;
+    while matches!(s.get(i), Some(c) if c.is_ascii_digit()) { i += 1; }
+    if i == gen_start || i - gen_start > 5 { return None; }
+    let gen = std::str::from_utf8(&s[gen_start..i]).ok()?.parse::<u16>().ok()?;
+    while s.get(i) == Some(&b' ') { i += 1; }
+    if s.get(i..i + 3)? != b"obj" { return None; }
+    Some((num, gen))
+}
+
+/// Offsets of every `N G obj` header that begins a line, keyed by object
+/// number. Later definitions win, which is what an incremental update means.
+///
+/// Objects stored inside an /ObjStm are invisible to this, so a reconstruction
+/// built from it is incomplete for such files. That is why the result is
+/// validated before being used rather than trusted.
+fn scan_object_offsets(buffer: &[u8]) -> std::collections::BTreeMap<u32, (u16, usize)> {
+    let mut found = std::collections::BTreeMap::new();
+    if let Some((num, gen)) = parse_obj_header(buffer) {
+        found.insert(num, (gen, 0));
+    }
+    for i in 0..buffer.len() {
+        if buffer[i] == b'\n' || buffer[i] == b'\r' {
+            let at = i + 1;
+            if let Some((num, gen)) = parse_obj_header(&buffer[at..]) {
+                found.insert(num, (gen, at));
+            }
+        }
+    }
+    found
+}
+
+/// The `/Root` reference, read from the last trailer in the file.
+fn find_root_ref(buffer: &[u8]) -> Option<(u32, u16)> {
+    let at = buffer
+        .windows(5)
+        .enumerate()
+        .filter(|(_, w)| *w == b"/Root")
+        .map(|(i, _)| i)
+        .next_back()?;
+    let mut i = at + 5;
+    while matches!(buffer.get(i), Some(b' ' | b'\r' | b'\n')) { i += 1; }
+    let num_start = i;
+    while matches!(buffer.get(i), Some(c) if c.is_ascii_digit()) { i += 1; }
+    if i == num_start { return None; }
+    let num = std::str::from_utf8(&buffer[num_start..i]).ok()?.parse::<u32>().ok()?;
+    while matches!(buffer.get(i), Some(b' ')) { i += 1; }
+    let gen_start = i;
+    while matches!(buffer.get(i), Some(c) if c.is_ascii_digit()) { i += 1; }
+    let gen = std::str::from_utf8(&buffer[gen_start..i]).ok()?.parse::<u16>().ok()?;
+    Some((num, gen))
+}
+
+/// Tier one: rewrite the `startxref` offset to address the cross-reference
+/// table that is actually in the file.
+///
+/// Covers producers that emit a correct table but a pointer that misses it.
+/// Only the digits of the offset change and they sit after the table, so no
+/// object offset moves.
+fn repair_startxref(buffer: &[u8]) -> Option<Vec<u8>> {
+    let xref_at = buffer
+        .windows(4)
+        .enumerate()
+        .filter(|(i, w)| {
+            *w == b"xref" && (*i == 0 || buffer[i - 1] == b'\n' || buffer[i - 1] == b'\r')
+        })
+        .map(|(i, _)| i)
+        .next_back()?;
+
+    let startxref_at = buffer
+        .windows(9)
+        .enumerate()
+        .filter(|(_, w)| *w == b"startxref")
+        .map(|(i, _)| i)
+        .next_back()?;
+
+    let mut i = startxref_at + b"startxref".len();
+    while matches!(buffer.get(i), Some(b' ' | b'\r' | b'\n' | b'\t')) { i += 1; }
+    let digits_start = i;
+    while matches!(buffer.get(i), Some(c) if c.is_ascii_digit()) { i += 1; }
+    if i == digits_start { return None; }
+    let claimed = std::str::from_utf8(&buffer[digits_start..i]).ok()?.parse::<usize>().ok()?;
+    if claimed == xref_at { return None; }
+
+    let replacement = xref_at.to_string();
+    let mut repaired = Vec::with_capacity(buffer.len() + replacement.len());
+    repaired.extend_from_slice(&buffer[..digits_start]);
+    repaired.extend_from_slice(replacement.as_bytes());
+    repaired.extend_from_slice(&buffer[i..]);
+    Some(repaired)
+}
+
+/// Tier two: append a cross-reference table rebuilt from the object headers
+/// actually present in the file, plus a trailer pointing at it.
+///
+/// This is what qpdf, poppler and pdf.js do when the table cannot be trusted.
+/// It is needed when the recorded table is not merely mis-addressed but
+/// disagrees with the file -- one real document lists 80 entries while only 44
+/// objects load from them.
+///
+/// The original bytes are left untouched and the new table is appended, so
+/// every offset scanned stays valid. Readers take the last `startxref` before
+/// the final `%%EOF`, which is now ours.
+fn rebuild_xref(buffer: &[u8]) -> Option<Vec<u8>> {
+    let objects = scan_object_offsets(buffer);
+    let (root_num, root_gen) = find_root_ref(buffer)?;
+    if objects.is_empty() || !objects.contains_key(&root_num) {
+        return None;
+    }
+    let size = objects.keys().max()? + 1;
+
+    let mut out = Vec::with_capacity(buffer.len() + size as usize * 20 + 256);
+    out.extend_from_slice(buffer);
+    if !out.ends_with(b"\n") { out.push(b'\n'); }
+
+    let xref_at = out.len();
+    out.extend_from_slice(format!("xref\n0 {}\n", size).as_bytes());
+    out.extend_from_slice(b"0000000000 65535 f \n");
+    for id in 1..size {
+        match objects.get(&id) {
+            Some((gen, offset)) => {
+                out.extend_from_slice(format!("{:010} {:05} n \n", offset, gen).as_bytes())
+            }
+            None => out.extend_from_slice(b"0000000000 65535 f \n"),
+        }
+    }
+    out.extend_from_slice(
+        format!(
+            "trailer\n<< /Size {} /Root {} {} R >>\nstartxref\n{}\n%%EOF\n",
+            size, root_num, root_gen, xref_at
+        )
+        .as_bytes(),
+    );
+    Some(out)
+}
+
+/// Load `buffer`, recovering from a damaged cross-reference table.
+///
+/// Each candidate must not only load but yield at least one page. Without that
+/// check a repair can turn a loud failure into a silent one: the first version
+/// of this accepted a document that loaded 44 of its 80 objects and extracted
+/// nothing, which is worse than the error it replaced. On any doubt the
+/// ORIGINAL error is returned, so a file that fails for an unrelated reason
+/// still reports that reason.
+fn load_mem_recovering(buffer: &[u8], original: lopdf::Error) -> Result<Document, lopdf::Error> {
+    for candidate in [repair_startxref(buffer), rebuild_xref(buffer)].into_iter().flatten() {
+        if let Ok(doc) = Document::load_mem(&candidate) {
+            if !doc.get_pages().is_empty() {
+                dlog!("recovered a document with a damaged cross-reference table");
+                return Ok(doc);
+            }
+        }
+    }
+    Err(original)
+}
+
+fn load_mem_repairing(buffer: &[u8]) -> Result<Document, lopdf::Error> {
+    match Document::load_mem(buffer) {
+        Ok(doc) => Ok(doc),
+        Err(original) => load_mem_recovering(buffer, original),
+    }
+}
+
+/// `Document::load`, recovering from a damaged cross-reference table.
+///
+/// The happy path is untouched: the file is only read into memory once the
+/// normal load has already failed.
+fn load_repairing<P: AsRef<std::path::Path>>(path: P) -> Result<Document, OutputError> {
+    match Document::load(path.as_ref()) {
+        Ok(doc) => Ok(doc),
+        Err(original) => {
+            let buffer = std::fs::read(path.as_ref())?;
+            Ok(load_mem_recovering(&buffer, original)?)
+        }
+    }
+}
+
 /// Extract the text from a pdf at `path` and return a `String` with the results
 pub fn extract_text<P: std::convert::AsRef<std::path::Path>>(path: P) -> Result<String, OutputError> {
     let mut s = String::new();
     {
         let mut output = PlainTextOutput::new(&mut s);
-        let mut doc = Document::load(path)?;
+        let mut doc = load_repairing(path)?;
         maybe_decrypt(&mut doc)?;
         output_doc(&doc, &mut output)?;
     }
@@ -2290,7 +2474,7 @@ pub fn extract_text_encrypted<P: std::convert::AsRef<std::path::Path>>(
     let mut s = String::new();
     {
         let mut output = PlainTextOutput::new(&mut s);
-        let mut doc = Document::load(path)?;
+        let mut doc = load_repairing(path)?;
         output_doc_encrypted(&mut doc, &mut output, password)?;
     }
     Ok(s)
@@ -2300,7 +2484,7 @@ pub fn extract_text_from_mem(buffer: &[u8]) -> Result<String, OutputError> {
     let mut s = String::new();
     {
         let mut output = PlainTextOutput::new(&mut s);
-        let mut doc = Document::load_mem(buffer)?;
+        let mut doc = load_mem_repairing(buffer)?;
         maybe_decrypt(&mut doc)?;
         output_doc(&doc, &mut output)?;
     }
@@ -2314,7 +2498,7 @@ pub fn extract_text_from_mem_encrypted(
     let mut s = String::new();
     {
         let mut output = PlainTextOutput::new(&mut s);
-        let mut doc = Document::load_mem(buffer)?;
+        let mut doc = load_mem_repairing(buffer)?;
         output_doc_encrypted(&mut doc, &mut output, password)?;
     }
     Ok(s)
@@ -2335,7 +2519,7 @@ fn extract_text_by_page(doc: &Document, page_num: u32) -> Result<String, OutputE
 pub fn extract_text_by_pages<P: std::convert::AsRef<std::path::Path>>(path: P) -> Result<Vec<String>, OutputError> {
     let mut v = Vec::new();
     {
-        let mut doc = Document::load(path)?;
+        let mut doc = load_repairing(path)?;
         maybe_decrypt(&mut doc)?;
         let mut page_num = 1;
         while let Ok(content) = extract_text_by_page(&doc, page_num) {
@@ -2349,7 +2533,7 @@ pub fn extract_text_by_pages<P: std::convert::AsRef<std::path::Path>>(path: P) -
 pub fn extract_text_by_pages_encrypted<P: std::convert::AsRef<std::path::Path>>(path: P, password: &str) -> Result<Vec<String>, OutputError> {
     let mut v = Vec::new();
     {
-        let mut doc = Document::load(path)?;
+        let mut doc = load_repairing(path)?;
         doc.decrypt(password)?;
         let mut page_num = 1;
         while let Ok(content) = extract_text_by_page(&mut doc, page_num) {
@@ -2363,7 +2547,7 @@ pub fn extract_text_by_pages_encrypted<P: std::convert::AsRef<std::path::Path>>(
 pub fn extract_text_from_mem_by_pages(buffer: &[u8]) -> Result<Vec<String>, OutputError> {
     let mut v = Vec::new();
     {
-        let mut doc = Document::load_mem(buffer)?;
+        let mut doc = load_mem_repairing(buffer)?;
         maybe_decrypt(&mut doc)?;
         let mut page_num = 1;
         while let Ok(content) = extract_text_by_page(&doc, page_num) {
@@ -2377,7 +2561,7 @@ pub fn extract_text_from_mem_by_pages(buffer: &[u8]) -> Result<Vec<String>, Outp
 pub fn extract_text_from_mem_by_pages_encrypted(buffer: &[u8], password: &str) -> Result<Vec<String>, OutputError> {
     let mut v = Vec::new();
     {
-        let mut doc = Document::load_mem(buffer)?;
+        let mut doc = load_mem_repairing(buffer)?;
         doc.decrypt(password)?;
         let mut page_num = 1;
         while let Ok(content) = extract_text_by_page(&doc, page_num) {
