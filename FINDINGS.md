@@ -119,15 +119,40 @@ webserver. The other three point at web.archive.org.
 Fuzzing (now set up) is a better bug-finder here than corpus growth; corpus
 work is mainly about CI determinism.
 
-## 7. Trap: `examples/extract` writes `<name>.txt` into the current directory
+## 7. Trap: `examples/extract` is not a safe oracle
 
-Not a library bug, but it bit me. Running the example from inside a checkout
-drops the extracted text next to your source. When validating against a real
-document — bank statements, anything private — that silently writes the
-contents into the repo. Root `.gitignore` has `/*.txt`, so it will not be
-committed, but it is still sitting on disk.
+Not a library bug, but it has now misled two sessions in different ways. If
+you are reaching for this example as a quick check, read all three.
 
-Run it from a scratch directory, or `cd` somewhere disposable first.
+**It writes `<name>.<kind>` into the current directory.** Running it from
+inside a checkout drops the extracted text next to your source. When
+validating against a real document — bank statements, anything private — that
+silently writes the contents into the repo. Root `.gitignore` has `/*.txt`, so
+it will not be committed, but it is still sitting on disk. Run it from a
+scratch directory and clear it afterwards. One such run left a real mortgage
+statement in `/tmp` for roughly forty minutes.
+
+**Stdout is not the extraction.** Stdout carries only the filename and
+`print_metadata(&doc)`. The text goes to the output file. Measuring stdout and
+believing it to be the extraction produced a figure 3x too small and a
+confident "confirmed clean" that happened to be right for the wrong reason.
+Measure the output file.
+
+**Exit 0 does not mean the extraction completed.** The last line is:
+
+```rust
+output_doc(&doc, output.as_mut());
+```
+
+The `Result` is discarded outright — not even `let _ =`. A mid-document error
+is swallowed, and you get a short output file and a clean exit with nothing on
+stderr. `doc.decrypt("")` above it drops its result the same way, and
+`Document::load(path).unwrap()` panics rather than reporting.
+
+So the example can only tell you that nothing *panicked*. To establish that a
+document extracted fully, compare the output length against an independent
+path — `extract_text_from_mem` is the obvious one — rather than trusting the
+exit status.
 
 ## 8. Run segmentation vs pdf.js — MISATTRIBUTED, mostly not this library
 
