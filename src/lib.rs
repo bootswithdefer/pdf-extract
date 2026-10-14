@@ -2418,7 +2418,14 @@ fn load_mem_recovering(buffer: &[u8], original: lopdf::Error) -> Result<Document
     Err(original)
 }
 
-fn load_mem_repairing(buffer: &[u8]) -> Result<Document, lopdf::Error> {
+/// `Document::load_mem`, recovering from a damaged cross-reference table.
+///
+/// Public because the recovery is otherwise unreachable for a consumer that
+/// drives its own [`OutputDev`]: [`output_doc`] takes a `&Document` the caller
+/// must already hold, and the only other way to obtain one is `Document::load`,
+/// which has no recovery. The `extract_text*` family returns `String`, so a
+/// consumer that needs positioned glyphs cannot use it to get the repair.
+pub fn load_mem_repairing(buffer: &[u8]) -> Result<Document, lopdf::Error> {
     match Document::load_mem(buffer) {
         Ok(doc) => Ok(doc),
         Err(original) => load_mem_recovering(buffer, original),
@@ -2429,7 +2436,10 @@ fn load_mem_repairing(buffer: &[u8]) -> Result<Document, lopdf::Error> {
 ///
 /// The happy path is untouched: the file is only read into memory once the
 /// normal load has already failed.
-fn load_repairing<P: AsRef<std::path::Path>>(path: P) -> Result<Document, OutputError> {
+///
+/// Public for the same reason as [`load_mem_repairing`]: a consumer driving its
+/// own [`OutputDev`] has no other way to reach the recovery.
+pub fn load_repairing<P: AsRef<std::path::Path>>(path: P) -> Result<Document, OutputError> {
     match Document::load(path.as_ref()) {
         Ok(doc) => Ok(doc),
         Err(original) => {
