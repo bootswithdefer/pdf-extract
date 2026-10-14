@@ -1,0 +1,59 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> /ColorSpace << /CS0 [/Separation /Spot [/Lab 6 0 R] 7 0 R] /CS1 [/Separation /Spot [/CalRGB 8 0 R] 7 0 R] /CS2 [/Separation /Spot [/CalGray 9 0 R] 7 0 R] /CS3 [/Lab 6 0 R] /CS4 [/CalRGB 8 0 R] /CS5 [/CalGray 9 0 R] >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 149 >>
+stream
+/CS0 cs 1 scn
+/CS1 cs 1 scn
+/CS2 cs 1 scn
+/CS3 cs 1 1 1 scn
+/CS4 cs 1 1 1 scn
+/CS5 cs 1 scn
+BT
+/F1 18 Tf
+72 700 Td
+(Indirect colorspace dicts) Tj
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+6 0 obj
+<< /WhitePoint [0.9505 1.0 1.089] /Range [-100 100 -100 100] >>
+endobj
+7 0 obj
+<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0] /C1 [1 1 1] /N 1 >>
+endobj
+8 0 obj
+<< /WhitePoint [0.9505 1.0 1.089] /Gamma [2.2 2.2 2.2] >>
+endobj
+9 0 obj
+<< /WhitePoint [0.9505 1.0 1.089] /Gamma 2.2 >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000121 00000 n 
+0000000465 00000 n 
+0000000664 00000 n 
+0000000734 00000 n 
+0000000813 00000 n 
+0000000893 00000 n 
+0000000966 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+1029
+%%EOF

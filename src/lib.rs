@@ -1484,7 +1484,7 @@ fn make_colorspace<'a>(doc: &'a Document, name: &[u8], resources: &'a Dictionary
                                         AlternateColorSpace::ICCBased(get_contents(stream))
                                     }
                                     "CalGray" => {
-                                        let dict = cs[1].as_dict().expect("second arg must be a dict");
+                                        let dict = maybe_deref(doc, &cs[1]).as_dict().expect("second arg must be a dict");
                                         AlternateColorSpace::CalGray(CalGray {
                                             white_point: get(&doc, dict, b"WhitePoint"),
                                             black_point: get(&doc, dict, b"BackPoint"),
@@ -1492,7 +1492,7 @@ fn make_colorspace<'a>(doc: &'a Document, name: &[u8], resources: &'a Dictionary
                                         })
                                     }
                                     "CalRGB" => {
-                                        let dict = cs[1].as_dict().expect("second arg must be a dict");
+                                        let dict = maybe_deref(doc, &cs[1]).as_dict().expect("second arg must be a dict");
                                         AlternateColorSpace::CalRGB(CalRGB {
                                             white_point: get(&doc, dict, b"WhitePoint"),
                                             black_point: get(&doc, dict, b"BackPoint"),
@@ -1501,7 +1501,7 @@ fn make_colorspace<'a>(doc: &'a Document, name: &[u8], resources: &'a Dictionary
                                         })
                                     }
                                     "Lab" => {
-                                        let dict = cs[1].as_dict().expect("second arg must be a dict");
+                                        let dict = maybe_deref(doc, &cs[1]).as_dict().expect("second arg must be a dict");
                                         AlternateColorSpace::Lab(Lab {
                                             white_point: get(&doc, dict, b"WhitePoint"),
                                             black_point: get(&doc, dict, b"BackPoint"),
@@ -1525,7 +1525,7 @@ fn make_colorspace<'a>(doc: &'a Document, name: &[u8], resources: &'a Dictionary
                         ColorSpace::ICCBased(get_contents(stream))
                     }
                     "CalGray" => {
-                        let dict = cs[1].as_dict().expect("second arg must be a dict");
+                        let dict = maybe_deref(doc, &cs[1]).as_dict().expect("second arg must be a dict");
                         ColorSpace::CalGray(CalGray {
                             white_point: get(&doc, dict, b"WhitePoint"),
                             black_point: get(&doc, dict, b"BackPoint"),
@@ -1533,7 +1533,7 @@ fn make_colorspace<'a>(doc: &'a Document, name: &[u8], resources: &'a Dictionary
                         })
                     }
                     "CalRGB" => {
-                        let dict = cs[1].as_dict().expect("second arg must be a dict");
+                        let dict = maybe_deref(doc, &cs[1]).as_dict().expect("second arg must be a dict");
                         ColorSpace::CalRGB(CalRGB {
                             white_point: get(&doc, dict, b"WhitePoint"),
                             black_point: get(&doc, dict, b"BackPoint"),
@@ -1542,7 +1542,7 @@ fn make_colorspace<'a>(doc: &'a Document, name: &[u8], resources: &'a Dictionary
                         })
                     }
                     "Lab" => {
-                        let dict = cs[1].as_dict().expect("second arg must be a dict");
+                        let dict = maybe_deref(doc, &cs[1]).as_dict().expect("second arg must be a dict");
                         ColorSpace::Lab(Lab {
                             white_point: get(&doc, dict, b"WhitePoint"),
                             black_point: get(&doc, dict, b"BackPoint"),

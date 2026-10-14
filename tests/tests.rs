@@ -16,7 +16,13 @@ macro_rules! expected {
 // and then check if the text is correctly extracted
 #[test]
 fn extract_expected_text() {
-    let docs = vec![expected!("documents_stack.pdf.link", "mouse button until")];
+    let docs = vec![
+        expected!("documents_stack.pdf.link", "mouse button until"),
+        // CalGray/CalRGB/Lab parameter dictionaries reached by indirect
+        // reference, both nested under /Separation and at the top level.
+        // Each of those six arms used to panic in make_colorspace.
+        expected!("indirect-colorspace-dicts.pdf", "Indirect colorspace dicts"),
+    ];
     for doc in docs {
         doc.test();
     }
