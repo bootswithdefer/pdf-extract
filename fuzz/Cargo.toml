@@ -1,0 +1,29 @@
+[package]
+name = "pdf-extract-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.pdf-extract]
+path = ".."
+
+# Fuzz targets are built with their own profile; keep debug info so panics
+# symbolicate, and keep overflow checks on so arithmetic bugs are caught
+# rather than silently wrapping.
+[profile.release]
+debug = 1
+debug-assertions = true
+overflow-checks = true
+
+[[bin]]
+name = "extract_text"
+path = "fuzz_targets/extract_text.rs"
+test = false
+doc = false
+bench = false
