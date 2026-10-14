@@ -1,40 +1,44 @@
 # pdf-extract: open findings
 
 Notes for a future session. Everything here is **unfixed**; fixed work is in
-the git log. Recorded 2026-10-13.
+the git log. Recorded 2026-10-13, last revised the same day.
 
-Fork master at time of writing: `8b0d710`. Three fixes landed this session
-(`7eab691`, `b003161`) plus the fuzz target.
+Fork master at time of writing: `3724aae`. Fixes landed so far: `7eab691`
+(font cache keyed by object id), `b003161` (two malformed-font cases),
+`477f87e` (indirect CIE colorspace dicts), `3724aae` (malformed text-showing
+operators), plus the fuzz target in `8b0d710`.
 
 ---
 
-## 1. `Tj` panics on a non-string operand — CONFIRMED, reproducible
+## 1. Dangling object references abort the document — CONFIRMED by fuzzer
 
-`src/lib.rs` (the `"Tj"` arm of `process_stream`):
+`maybe_deref`, `src/lib.rs:177`:
 
 ```rust
-_ => { panic!("unexpected Tj operand {:?}", operation) }
+&Object::Reference(r) => doc.get_object(r).expect("missing object reference"),
 ```
 
-Found by the fuzzer **within ten executions**. Reproduce by taking any valid
-one-page document and changing `Tf` to `Tj` in the content stream:
+A reference to an object that is missing or unparseable aborts extraction.
+Found by the fuzzer in a five-minute run immediately after the `Tj` arm was
+fixed, by corrupting one byte inside the function dictionary that
+`indirect-colorspace-dicts.pdf` reaches by reference.
 
-```
-BT /F1 24 Tj 72 720 Td (AAA) Tj ET
-```
+This matters more than it looks, because `477f87e` added six new `maybe_deref`
+call sites to `make_colorspace`. That fix was right -- it replaced a panic on
+a valid construct with correct handling -- but it does mean malformed files
+now reach this `expect` through more paths than before. It is the same bug
+class as item 2: the arms around it already tolerate what they cannot use.
 
-That leaves a text-showing operator with a numeric operand and no font ever
-set. Any truncated or lightly corrupted content stream can produce this.
+The narrow fix is for `maybe_deref` to return the original object, or an
+`Object::Null`, when the reference does not resolve, so the caller's existing
+"unexpected operand" handling takes over. Note that callers currently assume
+the deref succeeded, so check each of the six colorspace sites before
+changing the signature.
 
-**Why it wasn't fixed here:** this arm is the same territory as upstream PRs
-#148, #154 and #158, which all propose competing "guard the operators"
-rewrites and have been open for months. Picking a shape for it is a decision,
-not a drive-by. The narrow fix is to skip the operator and log; the broad fix
-is the `Result` threading in item 5.
-
-Re-find it with `cargo +nightly fuzz run extract_text` (see `fuzz/README.md`).
-The crash artifact itself is gitignored and will not have survived.
-
+Reproduce: `cargo +nightly fuzz run extract_text` with the existing seed
+corpus finds it quickly. The crash artifact is gitignored and will not have
+survived; the mutation replaces the `/` of `/C0` inside object 7 with a `0x01`
+byte.
 ## 2. Colorspace array elements assumed to be direct objects — UNVERIFIED
 
 In `make_colorspace`:
@@ -64,7 +68,9 @@ assert!(operation.operands.len() == 2);   // x2
 
 A content stream with a path operator missing operands aborts the document.
 This is precisely what upstream #148/#154/#158 are about. Same decision
-needed as item 1 — and note the maintainer has pushed back on all three.
+needed as the `Tj` arm, which was settled by taking the narrow fix
+(skip and log) in `3724aae` — and note the maintainer has pushed back on
+all three upstream attempts at the broad one.
 
 ## 4. Type3 never merges its ToUnicode map into `encoding_table`
 
@@ -79,10 +85,18 @@ Recorded because two sessions independently flagged it as a suspect; if you
 are chasing a Type3 decode problem, rule the cache out first, and do not
 "fix" this expecting it to change behaviour.
 
-## 5. 107 abort sites, and a `Result` API that nothing uses
+## 5. 115 abort sites, and a `Result` API that nothing uses
 
-`panic!` 30, `.unwrap()` 41, `.expect(` 28, `assert!`/`assert_eq!` 8,
-`todo!` 1 — in 2461 lines, about one every 23 lines.
+`panic!` 29, `.unwrap()` 48, `.expect(` 29, `assert!`/`assert_eq!` 8,
+`todo!` 1 — 115 in 2461 lines, about one every 21 lines. Recounted
+2026-10-13 by occurrence, not by matching line, which is why the totals
+differ slightly from the figures recorded earlier the same day:
+
+```sh
+for pat in 'panic!' '\.unwrap()' '\.expect(' 'assert!|assert_eq!' 'todo!'; do
+    grep -oE "$pat" src/lib.rs | wc -l
+done
+```
 
 `extract_text` and friends already return `Result<String, OutputError>`, so
 the error channel exists; the parser simply never uses it for malformed
