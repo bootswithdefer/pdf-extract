@@ -128,21 +128,47 @@ it. If you touch word-break logic, this is the symptom to test for. Compare
 against `pdftotext` output on the same file; the corpus in `tests/docs_cache`
 is enough to see whether it generalises.
 
+Downstream confirmation (slatesplit-cli session, 2026-10-13): this is not
+merely cosmetic there. That CLI's layout fingerprints are written against
+pdf.js text and held byte-identical to a web registry by a drift guard, so a
+word break that `merge_runs` fuses but pdf.js keeps makes a fingerprint stop
+matching silently — the M&T layout was dead on every real document with all of
+its tests green. Fixed on their side by matching whitespace-insensitively
+(slatesplit-cli `7a3b6af`). If this gap is ever closed in the library, that is
+who it affects and how it manifests.
+
 ---
 
 ## Upstream state
 
-`fix/colorspace-indirect-dict` has no PR open. The agreed strategy, if one is
-opened: **src-only, six lines, rebased onto `upstream/master`**, fixture and
-test wiring staying on the fork, PR body arguing from the adjacent ICCBased
-arm which already derefs.
+Upstream submission is **deprioritised by the operator** (2026-10-13): this
+repo is a fork, fixes land on fork `master`, and PRs to `jrmuizel/pdf-extract`
+are not to be opened without asking first.
 
-Reason: the maintainer has refused synthetic reproducers repeatedly (on #158,
-verbatim: *"I'm not interested in manually generated PDF with the problem."*)
-and PR #164 is stalled on exactly that request. Attaching our hand-built
-fixture invites the objection rather than pre-empting it. Say in the PR body
-that a fixture exists and was withheld deliberately, and offer it — declining
-to attach then reads as deference rather than as an untested patch.
+- The colorspace fix is on `master` at `477f87e`. Branch
+  `fix/colorspace-indirect-dict` was **deleted**, local and on origin — fully
+  merged, and it existed only as a PR source. The six-line diff and its full
+  rationale live in the `477f87e` commit message.
+- `fix/type3-missing-width` still exists on origin at `824f91b` because it is
+  the head ref of **PR #164, still open** upstream. Do not delete it and do not
+  "catch it up" to master: deleting it closes the PR, advancing it would bundle
+  unrelated fixes.
 
-Do not bundle fixes into one PR; the maintainer asked for separate PRs
-on #136.
+If upstream submission is revived, the agreed strategy for the colorspace fix
+was: **src-only, six lines, rebased onto `upstream/master`**, fixture and test
+wiring staying on the fork, PR body arguing from the adjacent ICCBased arm
+which already derefs. The deleted branch could not have been used as-is — it
+was based on `824f91b`, so a PR from it would have bundled the Type3 fix, which
+the maintainer refused on #136. Rebuild from `upstream/master`; it is about ten
+minutes.
+
+Reason for withholding the fixture: the maintainer has refused synthetic
+reproducers repeatedly (on #158, verbatim: *"I'm not interested in manually
+generated PDF with the problem."*) and PR #164 is stalled on exactly that
+request. Say in the PR body that a fixture exists and was withheld
+deliberately, and offer it — declining to attach then reads as deference rather
+than as an untested patch.
+
+Do not bundle fixes into one PR; the maintainer asked for separate PRs on #136.
+Tracked downstream as `slatesplit-cli-jqc` (open, unassigned, on hold by
+operator decision rather than by its recorded blocker).
