@@ -115,68 +115,50 @@ committed, but it is still sitting on disk.
 
 Run it from a scratch directory, or `cd` somewhere disposable first.
 
-## 8. Run segmentation differs from pdf.js / poppler — word breaks AND lone glyphs
+## 8. Run segmentation vs pdf.js — MISATTRIBUTED, mostly not this library
 
-`PlainTextOutput` fuses adjacent runs that other extractors separate. A real
-case from a downstream consumer: M&T statement text came out as `M&TBank`
-where pdf.js produced `M&T Bank`. The consumer worked around it on their side
-by making their matcher whitespace-insensitive.
+**Correction (2026-10-13).** Earlier revisions of this item recorded two
+downstream symptoms — `M&TBank` for `M&T Bank`, and a detached minus sign
+being absorbed so withdrawals import as deposits — as evidence that this
+library fuses runs that pdf.js keeps separate. That attribution was wrong, and
+it was wrong because it was taken from a consumer's report without checking
+which code path the consumer uses.
 
-Not reproduced here and no fixture — recorded because it is a silent
-correctness difference, not a crash, so nothing in the test suite would catch
-it. If you touch word-break logic, this is the symptom to test for. Compare
-against `pdftotext` output on the same file; the corpus in `tests/docs_cache`
-is enough to see whether it generalises.
+What the code actually does:
 
-Downstream confirmation (slatesplit-cli session, 2026-10-13): this is not
-merely cosmetic there. That CLI's layout fingerprints are written against
-pdf.js text and held byte-identical to a web registry by a drift guard, so a
-word break that `merge_runs` fuses but pdf.js keeps makes a fingerprint stop
-matching silently — the M&T layout was dead on every real document with all of
-its tests green. Fixed on their side by matching whitespace-insensitively
-(slatesplit-cli `7a3b6af`). If this gap is ever closed in the library, that is
-who it affects and how it manifests.
+- `OutputDev::output_character` is called **once per glyph**, with the text
+  matrix, width, spacing and font size. This library performs no run merging
+  on that path. Every glyph arrives individually, with its position.
+- The consumer that reported both symptoms (slatesplit-cli) implements its own
+  `OutputDev` and calls `output_doc`. It never uses `PlainTextOutput`.
+- The merging is that consumer's own `merge_runs`
+  (`slatesplit-cli/src/pdf/extract.rs:194`), which joins glyphs when
+  `c.x - end <= c.size * WORD_GAP_FACTOR`, with `WORD_GAP_FACTOR = 0.5`.
 
-**It is not only word breaks between letters — a lone punctuation glyph is
-absorbed the same way, and that one is worse.** Measured by the slatesplit-cli
-session across 13 real NFCU checking statements (2509 spans). Those statements
-mark a withdrawal with a *detached* minus, which pdf.js emits as its own span
-at x≈472, sitting between the amount (x≈443.7) and the balance (x≈566); the
-consumer has a `signColumn` option that exists purely to read that span and
-negate the amount. Under this library:
+So the detached minus **is** delivered to that consumer as its own positioned
+glyph. Nothing here absorbs it; their gap threshold does. The same goes for
+`M&T Bank`. Neither symptom is fixable in this repo, because the information
+needed to avoid them is already being handed over.
 
-```
-detached '-' span at x 464-480:   0     <- never survives
-other spans in that band:        71     <- band is populated, just never by a minus
-spans ENDING in '-':             29     <- fused, at x 566.1(13) 558.6(8) 443.7(5) 571.2(2) 448.8(1)
-```
+Their own notes record that `WORD_GAP_FACTOR` values of 0.3, 0.4 and 0.5 all
+give zero mismatched fields on their corpus, so there is likely room to tune
+without regression — but that is their call and their corpus, not ours.
 
-`merge_runs` absorbs the sign into whichever neighbouring run is nearest —
-usually the balance, sometimes the amount. The statements certainly contain
-withdrawals (ATM Withdrawal, ATM Fee, Paid To autopay), so nothing is missing
-from the text; the glyph has merely stopped being its own span.
+**What remains genuinely open here, and is UNVERIFIED:** `PlainTextOutput`
+does join adjacent runs, so callers of `extract_text` and friends may still
+see spacing that differs from `pdftotext` or pdf.js. No one has demonstrated
+that. The two real-world cases that looked like proof of it turned out to come
+from a caller that does not use `PlainTextOutput` at all. Before treating this
+as a bug, reproduce it through `extract_text` itself and diff against
+`pdftotext` on the same file; `tests/docs_cache` is enough to tell whether it
+generalises.
 
-The failure modes are worth contrasting, because the second is the dangerous
-one:
-
-- `M&TBank`: fingerprint never matches, no layout, nothing imports. **Loud.**
-- fused sign: fingerprint matches, rows extract, and every withdrawal imports
-  as a **deposit**. Wrong-signed money with no error anywhere. **Silent.**
-
-The general statement: when a consumer attaches meaning to a glyph's
-*position* — a sign marker, a currency symbol, a footnote dagger — absorbing
-that glyph into a neighbour changes the meaning, not the formatting. The
-library symptom is still only "a space is missing".
-
-A related coordinate issue from the same origin, recorded because it looks
-like the same bug and is not: amounts are right-aligned, so short values start
-further right, and 10 of 57 amount spans land at x=453.90 against a column
-tolerance ending at 453.7, dropping those rows. That is tolerance tuning on
-the consumer side, not run segmentation here — but it shares the cause of
-coordinates measured under pdf.js being consumed under pdf-extract.
-
-Not reproduced in this repo and no fixture; the measurements are from the
-consumer's corpus of real statements, which cannot be committed here.
+**Process note, worth more than the finding.** This was recorded as a
+confirmed library bug, with measurements, through two rounds of cross-session
+review, and committed twice — because the measurements were real and precise,
+and precision reads as correctness. Nobody, including me, checked which
+function `merge_runs` belonged to. A consumer's measurement tells you a
+symptom is real; it does not tell you whose code produced it.
 
 ---
 
