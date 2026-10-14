@@ -115,6 +115,19 @@ committed, but it is still sitting on disk.
 
 Run it from a scratch directory, or `cd` somewhere disposable first.
 
+## 8. Word boundaries differ from pdf.js / poppler — reported, not investigated
+
+`PlainTextOutput` fuses adjacent runs that other extractors separate. A real
+case from a downstream consumer: M&T statement text came out as `M&TBank`
+where pdf.js produced `M&T Bank`. The consumer worked around it on their side
+by making their matcher whitespace-insensitive.
+
+Not reproduced here and no fixture — recorded because it is a silent
+correctness difference, not a crash, so nothing in the test suite would catch
+it. If you touch word-break logic, this is the symptom to test for. Compare
+against `pdftotext` output on the same file; the corpus in `tests/docs_cache`
+is enough to see whether it generalises.
+
 ---
 
 ## Upstream state
