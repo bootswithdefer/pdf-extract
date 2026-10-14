@@ -26,6 +26,13 @@ fn extract_expected_text() {
         // different fonts. "YYY" only appears if the form's own /F1 is used
         // rather than the page's; a name-keyed font cache yields "XXX" twice.
         expected!("nested-resource-font-names.pdf", "YYY"),
+        // A ToUnicode value that is an unpaired surrogate followed by another
+        // code unit. The entry is unrepresentable and gets skipped, so the text
+        // comes back through the font's encoding instead of aborting the file.
+        expected!("tounicode-lone-surrogate.pdf", "AAA"),
+        // Widths stops short of LastChar. Uncovered codes take MissingWidth
+        // rather than tripping an assert.
+        expected!("widths-shorter-than-lastchar.pdf", "AAA"),
     ];
     for doc in docs {
         doc.test();

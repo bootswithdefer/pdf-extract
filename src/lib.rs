@@ -582,7 +582,12 @@ impl<'a> PdfSimpleFont<'a> {
                 width_map.insert((first_char + i) as CharCode, w);
                 i += 1;
             }
-            assert_eq!(first_char + i - 1, last_char);
+            // The spec says Widths holds last_char - first_char + 1 entries, but
+            // malformed files disagree. Codes left uncovered fall back to the
+            // descriptor's MissingWidth, so a mismatch doesn't have to be fatal.
+            if first_char + i - 1 != last_char {
+                warn!("Widths covers {}..{} but LastChar is {} for {:?}", first_char, first_char + i - 1, last_char, base_name);
+            }
         } else {
             let name = if is_core_font(&base_name) {
                 &base_name
@@ -760,7 +765,11 @@ impl<'a> PdfType3Font<'a> {
             width_map.insert((first_char + i) as CharCode, w);
             i += 1;
         }
-        assert_eq!(first_char + i - 1, last_char);
+        // As in PdfSimpleFont: tolerate a Widths array that doesn't line up with
+        // FirstChar/LastChar and let missing_width cover the uncovered codes.
+        if first_char + i - 1 != last_char {
+            warn!("Widths covers {}..{} but LastChar is {} for a Type3 font", first_char, first_char + i - 1, last_char);
+        }
         let missing_width = get::<Option<f64>>(doc, font, b"MissingWidth").unwrap_or(0.);
         PdfType3Font {doc, font, widths: width_map, encoding: encoding_table, unicode_map, missing_width}
     }
@@ -937,22 +946,30 @@ fn get_unicode_map<'a>(doc: &'a Document, font: &'a Dictionary) -> Option<HashMa
             // define the mapping from character codes to Unicode character sequences expressed in
             // UTF-16BE encoding."
             for (&k, v) in cmap.iter() {
+                // UTF-16BE code units come in pairs of bytes; an odd-length value
+                // is malformed and there's no way to know what was meant.
+                if v.len() % 2 != 0 {
+                    debug!("skipping odd-length ToUnicode value for code {}: {:?}", k, v);
+                    continue;
+                }
                 let mut be: Vec<u16> = Vec::new();
                 let mut i = 0;
-                assert!(v.len() % 2 == 0);
                 while i < v.len() {
                     be.push(((v[i] as u16) << 8) | v[i+1] as u16);
                     i += 2;
                 }
-                match &be[..] {
-                    [0xd800 ..= 0xdfff] => {
-                        // this range is not specified as not being encoded
-                        // we ignore them so we don't an error from from_utt16
+                // Unpaired surrogates aren't representable. They occur both alone
+                // and in the middle of a longer sequence, so test the decode itself
+                // rather than pattern-matching a one-element slice: the latter let
+                // a lone surrogate followed by another unit reach from_utf16 and
+                // abort extraction of the whole document.
+                let s = match String::from_utf16(&be) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        debug!("skipping invalid UTF-16 ToUnicode value for code {}: {:?} ({})", k, be, e);
                         continue;
                     }
-                    _ => {}
-                }
-                let s = String::from_utf16(&be).unwrap();
+                };
 
                 unicode.insert(k, s);
             }
