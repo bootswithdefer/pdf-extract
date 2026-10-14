@@ -115,7 +115,7 @@ committed, but it is still sitting on disk.
 
 Run it from a scratch directory, or `cd` somewhere disposable first.
 
-## 8. Word boundaries differ from pdf.js / poppler — reported, not investigated
+## 8. Run segmentation differs from pdf.js / poppler — word breaks AND lone glyphs
 
 `PlainTextOutput` fuses adjacent runs that other extractors separate. A real
 case from a downstream consumer: M&T statement text came out as `M&TBank`
@@ -136,6 +136,47 @@ matching silently — the M&T layout was dead on every real document with all of
 its tests green. Fixed on their side by matching whitespace-insensitively
 (slatesplit-cli `7a3b6af`). If this gap is ever closed in the library, that is
 who it affects and how it manifests.
+
+**It is not only word breaks between letters — a lone punctuation glyph is
+absorbed the same way, and that one is worse.** Measured by the slatesplit-cli
+session across 13 real NFCU checking statements (2509 spans). Those statements
+mark a withdrawal with a *detached* minus, which pdf.js emits as its own span
+at x≈472, sitting between the amount (x≈443.7) and the balance (x≈566); the
+consumer has a `signColumn` option that exists purely to read that span and
+negate the amount. Under this library:
+
+```
+detached '-' span at x 464-480:   0     <- never survives
+other spans in that band:        71     <- band is populated, just never by a minus
+spans ENDING in '-':             29     <- fused, at x 566.1(13) 558.6(8) 443.7(5) 571.2(2) 448.8(1)
+```
+
+`merge_runs` absorbs the sign into whichever neighbouring run is nearest —
+usually the balance, sometimes the amount. The statements certainly contain
+withdrawals (ATM Withdrawal, ATM Fee, Paid To autopay), so nothing is missing
+from the text; the glyph has merely stopped being its own span.
+
+The failure modes are worth contrasting, because the second is the dangerous
+one:
+
+- `M&TBank`: fingerprint never matches, no layout, nothing imports. **Loud.**
+- fused sign: fingerprint matches, rows extract, and every withdrawal imports
+  as a **deposit**. Wrong-signed money with no error anywhere. **Silent.**
+
+The general statement: when a consumer attaches meaning to a glyph's
+*position* — a sign marker, a currency symbol, a footnote dagger — absorbing
+that glyph into a neighbour changes the meaning, not the formatting. The
+library symptom is still only "a space is missing".
+
+A related coordinate issue from the same origin, recorded because it looks
+like the same bug and is not: amounts are right-aligned, so short values start
+further right, and 10 of 57 amount spans land at x=453.90 against a column
+tolerance ending at 453.7, dropping those rows. That is tolerance tuning on
+the consumer side, not run segmentation here — but it shares the cause of
+coordinates measured under pdf.js being consumed under pdf-extract.
+
+Not reproduced in this repo and no fixture; the measurements are from the
+consumer's corpus of real statements, which cannot be committed here.
 
 ---
 
