@@ -33,6 +33,12 @@ fn extract_expected_text() {
         // Widths stops short of LastChar. Uncovered codes take MissingWidth
         // rather than tripping an assert.
         expected!("widths-shorter-than-lastchar.pdf", "AAA"),
+        // Malformed text-showing operators: a Tj whose operand is not a
+        // string, a Tj with no operand at all, and a TJ with no operand. Each
+        // aborted the document before. "AAA" comes from a valid Tj placed
+        // after all three, so this asserts that the bad operators are skipped
+        // and parsing continues, not merely that nothing panicked.
+        expected!("malformed-text-operators.pdf", "AAA"),
     ];
     for doc in docs {
         doc.test();

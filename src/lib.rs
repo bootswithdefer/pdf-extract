@@ -1690,8 +1690,8 @@ impl<'a> Processor<'a> {
                     dlog!("unhandled color operation {:?}", operation);
                 }
                 "TJ" => {
-                    match operation.operands[0] {
-                        Object::Array(ref array) => {
+                    match operation.operands.first() {
+                        Some(&Object::Array(ref array)) => {
                             for e in array {
                                 match e {
                                     &Object::String(ref s, _) => {
@@ -1719,15 +1719,15 @@ impl<'a> Processor<'a> {
                                 }
                             }
                         }
-                        _ => {}
+                        _ => { dlog!("unexpected TJ operand {:?}", operation); }
                     }
                 }
                 "Tj" => {
-                    match operation.operands[0] {
-                        Object::String(ref s, _) => {
+                    match operation.operands.first() {
+                        Some(&Object::String(ref s, _)) => {
                             show_text(&mut gs, s, &tlm, &flip_ctm, output)?;
                         }
-                        _ => { panic!("unexpected Tj operand {:?}", operation) }
+                        _ => { dlog!("unexpected Tj operand {:?}", operation); }
                     }
                 }
                 "Tc" => {
