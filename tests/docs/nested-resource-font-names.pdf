@@ -1,0 +1,84 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> /XObject << /X1 8 0 R >> >> /Contents 9 0 R >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar 65 /LastChar 65 /Widths [556] /Encoding /WinAnsiEncoding /ToUnicode 5 0 R >>
+endobj
+5 0 obj
+<< /Length 245 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CMapName /Custom def
+/CMapType 2 def
+1 begincodespacerange
+<00><ff>
+endcodespacerange
+1 beginbfchar
+<41><0058>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end end
+endstream
+endobj
+6 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /FirstChar 65 /LastChar 65 /Widths [556] /Encoding /WinAnsiEncoding /ToUnicode 7 0 R >>
+endobj
+7 0 obj
+<< /Length 245 >>
+stream
+/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+/CMapName /Custom def
+/CMapType 2 def
+1 begincodespacerange
+<00><ff>
+endcodespacerange
+1 beginbfchar
+<41><0059>
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end end
+endstream
+endobj
+8 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 612 792] /Resources << /Font << /F1 6 0 R >> >> /Length 35 >>
+stream
+BT /F1 24 Tf 72 680 Td (AAA) Tj ET
+endstream
+endobj
+9 0 obj
+<< /Length 42 >>
+stream
+BT /F1 24 Tf 72 720 Td (AAA) Tj ET
+/X1 Do
+endstream
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000266 00000 n 
+0000000421 00000 n 
+0000000716 00000 n 
+0000000871 00000 n 
+0000001166 00000 n 
+0000001339 00000 n 
+trailer
+<< /Size 10 /Root 1 0 R >>
+startxref
+1430
+%%EOF

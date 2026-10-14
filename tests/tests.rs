@@ -22,6 +22,10 @@ fn extract_expected_text() {
         // reference, both nested under /Separation and at the top level.
         // Each of those six arms used to panic in make_colorspace.
         expected!("indirect-colorspace-dicts.pdf", "Indirect colorspace dicts"),
+        // The page and a form XObject it draws both define /F1, pointing at
+        // different fonts. "YYY" only appears if the form's own /F1 is used
+        // rather than the page's; a name-keyed font cache yields "XXX" twice.
+        expected!("nested-resource-font-names.pdf", "YYY"),
     ];
     for doc in docs {
         doc.test();

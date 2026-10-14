@@ -1573,8 +1573,22 @@ fn make_colorspace<'a>(doc: &'a Document, name: &[u8], resources: &'a Dictionary
     }
 }
 
+/// Identifies a cached font.
+///
+/// Font resource names like /F1 are only meaningful relative to the resource
+/// dictionary they appear in. A form XObject brings its own /Font dictionary,
+/// so the same name can refer to a different font inside the form than it does
+/// on the page that draws it. Keying the cache by the font's object id keeps
+/// those apart; an inline font dictionary has no object id, so it falls back to
+/// the name.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+enum FontKey {
+    Ref(ObjectId),
+    Name(Vec<u8>),
+}
+
 struct Processor<'a> {
-    font_table: HashMap<Vec<u8>, Rc<dyn PdfFont + 'a>>,
+    font_table: HashMap<FontKey, Rc<dyn PdfFont + 'a>>,
     _none: PhantomData<&'a ()>,
 }
 
@@ -1714,7 +1728,11 @@ impl<'a> Processor<'a> {
                 "Tf" => {
                     let fonts: &Dictionary = get(&doc, resources, b"Font");
                     let name = operation.operands[0].as_name().unwrap();
-                    let font = self.font_table.entry(name.to_owned()).or_insert_with(|| make_font(doc, get::<&Dictionary>(doc, fonts, name))).clone();
+                    let key = match fonts.get(name) {
+                        Ok(&Object::Reference(id)) => FontKey::Ref(id),
+                        _ => FontKey::Name(name.to_owned()),
+                    };
+                    let font = self.font_table.entry(key).or_insert_with(|| make_font(doc, get::<&Dictionary>(doc, fonts, name))).clone();
                     {
                         /*let file = font.get_descriptor().and_then(|desc| desc.get_file());
                     if let Some(file) = file {
