@@ -357,10 +357,26 @@ fn encoding_to_unicode_table(name: &[u8]) -> Vec<u16> {
         b"MacRomanEncoding" => encodings::MAC_ROMAN_ENCODING,
         b"MacExpertEncoding" => encodings::MAC_EXPERT_ENCODING,
         b"WinAnsiEncoding" => encodings::WIN_ANSI_ENCODING,
-        _ => panic!("unexpected encoding {:?}", pdf_to_utf8(name))
+        b"StandardEncoding" => encodings::STANDARD_ENCODING,
+        b"SymbolEncoding" => encodings::SYMBOL_ENCODING,
+        b"ZapfDingbatsEncoding" => encodings::ZAPFDINGBATS_ENCODING,
+        b"ExpertEncoding" => encodings::EXPERT_ENCODING,
+        _ => {
+            // An encoding we don't know is not a reason to abort the document:
+            // fall back to StandardEncoding so the rest of the page still
+            // extracts, and let Differences override what it can.
+            warn!("unexpected encoding {:?}, falling back to StandardEncoding", pdf_to_utf8(name));
+            encodings::STANDARD_ENCODING
+        }
     };
     let encoding_table = encoding.iter()
-        .map(|x| if let &Some(x) = x { glyphnames::name_to_unicode(x).unwrap() } else { 0 })
+        .map(|x| if let &Some(x) = x {
+            // ZapfDingbats glyph names ("a1".."a191") live in their own table,
+            // and an unmappable name is a missing glyph, not a fatal error.
+            glyphnames::name_to_unicode(x)
+                .or_else(|| zapfglyphnames::zapfdigbats_names_to_unicode(x))
+                .unwrap_or(0)
+        } else { 0 })
         .collect();
     encoding_table
 }

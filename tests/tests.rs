@@ -44,6 +44,17 @@ fn extract_expected_text() {
         // to be lost with "invalid file trailer"; it is now recovered by
         // correcting the pointer.
         expected!("broken-startxref.pdf", "AAA"),
+        // /Encoding /SymbolEncoding. Only three base encodings were matched
+        // and every other name hit a panic!, so a legitimate encoding aborted
+        // the document. Asserting the Greek letters rather than mere survival
+        // also covers the second panic one line below the first: the per-glyph
+        // name_to_unicode(x).unwrap(), which Symbol's "alpha"/"beta" names
+        // reach and ZapfDingbats' "a1".."a191" names would abort on.
+        expected!("symbol-encoding.pdf", "\u{3b1}\u{3b2}\u{3b3}"),
+        // Same file, second font: /Encoding /NoSuchEncoding. An unknown
+        // encoding now warns and falls back to StandardEncoding, so "AAA"
+        // still extracts instead of the document being abandoned.
+        expected!("symbol-encoding.pdf", "AAA"),
     ];
     for doc in docs {
         doc.test();
