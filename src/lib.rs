@@ -631,7 +631,15 @@ impl<'a> PdfSimpleFont<'a> {
                     if let Some(ref encoding) = encoding_table {
                         dlog!("has encoding");
                         for w in font_metrics.2 {
-                            let c = glyphnames::name_to_unicode(w.2).unwrap();
+                            // ZapfDingbats metric names ("a1".."a191") are not in
+                            // glyphnames. A name neither list knows has no mapping,
+                            // so skip its width rather than abort the document.
+                            let c = match glyphnames::name_to_unicode(w.2)
+                                .or_else(|| zapfglyphnames::zapfdigbats_names_to_unicode(w.2))
+                            {
+                                Some(c) => c,
+                                None => continue,
+                            };
                             for i in 0..encoding.len() {
                                 if encoding[i] == c {
                                     width_map.insert(i as CharCode, w.1 as f64);

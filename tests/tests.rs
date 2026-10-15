@@ -120,3 +120,12 @@ impl ExpectedText<'_> {
         );
     }
 }
+
+#[test]
+// ZapfDingbats carrying an /Encoding. The core-font width loop looked names up
+// in glyphnames only, which lacks "a1".."a191", and aborted the document.
+// Synthetic fixture (make_zapf_encoding_fixture.py): three glyphs, none blank.
+fn zapf_dingbats_with_encoding() {
+    let out = extract_text("tests/docs/zapf-encoding.pdf").unwrap();
+    assert!(out.contains("\u{2741}\u{2742}\u{2743}"), "got {:?}", out);
+}
