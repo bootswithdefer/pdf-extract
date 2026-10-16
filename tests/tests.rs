@@ -39,6 +39,12 @@ fn extract_expected_text() {
         // after all three, so this asserts that the bad operators are skipped
         // and parsing continues, not merely that nothing panicked.
         expected!("malformed-text-operators.pdf", "AAA"),
+        // The same shape in the POSITIONING arms: cm, Tm, Td and TD each
+        // asserted an exact operand count, so ONE truncated operation aborted
+        // the whole document. Five of a real corpus's PDFs were unreadable for
+        // this alone. "AAA" again comes from a valid Tj placed after all four,
+        // so this asserts parsing continues rather than merely not panicking.
+        expected!("malformed-position-operators.pdf", "AAA"),
         // A complete, valid xref table that startxref does not address -- the
         // offset points into the middle of an object. The whole document used
         // to be lost with "invalid file trailer"; it is now recovered by

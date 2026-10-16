@@ -1680,7 +1680,15 @@ impl<'a> Processor<'a> {
                     gs.ts.tm = tlm;
                 }
                 "cm" => {
-                    assert!(operation.operands.len() == 6);
+                    // A malformed operator drops ITS OWN effect and the
+                    // document keeps going. Asserting here aborted the whole
+                    // file over one bad operation, which on a real statement
+                    // means no text at all rather than one wrong placement
+                    // (slatesplit-cli-62l).
+                    if operation.operands.len() != 6 {
+                        warn!("cm with {} operands, skipping", operation.operands.len());
+                        continue;
+                    }
                     let m = Transform2D::row_major(as_num(&operation.operands[0]),
                                                    as_num(&operation.operands[1]),
                                                    as_num(&operation.operands[2]),
@@ -1792,7 +1800,10 @@ impl<'a> Processor<'a> {
                     gs.ts.rise = as_num(&operation.operands[0]);
                 }
                 "Tm" => {
-                    assert!(operation.operands.len() == 6);
+                    if operation.operands.len() != 6 {
+                        warn!("Tm with {} operands, skipping", operation.operands.len());
+                        continue;
+                    }
                     tlm = Transform2D::row_major(as_num(&operation.operands[0]),
                                                  as_num(&operation.operands[1]),
                                                  as_num(&operation.operands[2]),
@@ -1808,7 +1819,10 @@ impl<'a> Processor<'a> {
                    tx and ty are numbers expressed in unscaled text space units.
                    More precisely, this operator performs the following assignments:
                  */
-                    assert!(operation.operands.len() == 2);
+                    if operation.operands.len() != 2 {
+                        warn!("Td with {} operands, skipping", operation.operands.len());
+                        continue;
+                    }
                     let tx = as_num(&operation.operands[0]);
                     let ty = as_num(&operation.operands[1]);
                     dlog!("translation: {} {}", tx, ty);
@@ -1823,7 +1837,10 @@ impl<'a> Processor<'a> {
                     /* Move to the start of the next line, offset from the start of the current line by (tx , ty ).
                    As a side effect, this operator sets the leading parameter in the text state.
                  */
-                    assert!(operation.operands.len() == 2);
+                    if operation.operands.len() != 2 {
+                        warn!("TD with {} operands, skipping", operation.operands.len());
+                        continue;
+                    }
                     let tx = as_num(&operation.operands[0]);
                     let ty = as_num(&operation.operands[1]);
                     dlog!("translation: {} {}", tx, ty);
