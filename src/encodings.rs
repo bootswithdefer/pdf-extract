@@ -1808,3 +1808,102 @@ pub const ZAPFDINGBATS_ENCODING: [Option<&str>; 256] = [
   Some("a190"),
   Some("a191"),
   None];
+
+/// How the seven base encoding tables are covered by the two glyph-name
+/// lists, RE-DERIVED rather than recorded.
+///
+/// This matrix used to live only in a commit message and a mail from a session
+/// that has since ended (slatesplit-cli-kl6). It is a test instead of a
+/// document because a document goes stale silently and a test does not: change
+/// a table, add an encoding, or edit either name list, and the numbers below
+/// stop matching.
+#[cfg(test)]
+mod coverage {
+    use super::*;
+    use crate::{glyphnames, zapfglyphnames};
+
+    const TABLES: &[(&str, &[Option<&str>; 256], usize, usize)] = &[
+        // name, table, total names, names ABSENT from glyphnames
+        ("MAC_ROMAN", &MAC_ROMAN_ENCODING, 223, 0),
+        ("MAC_EXPERT", &MAC_EXPERT_ENCODING, 165, 0),
+        ("WIN_ANSI", &WIN_ANSI_ENCODING, 224, 0),
+        ("STANDARD", &STANDARD_ENCODING, 149, 0),
+        ("EXPERT", &EXPERT_ENCODING, 165, 0),
+        ("SYMBOL", &SYMBOL_ENCODING, 188, 0),
+        // The outlier, and the whole point of the matrix.
+        ("ZAPFDINGBATS", &ZAPFDINGBATS_ENCODING, 188, 187),
+    ];
+
+    fn names<'a>(table: &'a [Option<&'a str>; 256]) -> Vec<&'a str> {
+        table.iter().filter_map(|x| *x).collect()
+    }
+
+    /// SIX OF THE SEVEN TABLES ARE FULLY COVERED BY `glyphnames`. ZapfDingbats
+    /// is the ONLY one that needs the second lookup, and 187 of its 188 names
+    /// are absent from `glyphnames` entirely.
+    ///
+    /// That asymmetry is the reason a spot-check tells you nothing. Verify a
+    /// change against Symbol — the other 188-name table, and the one whose
+    /// name makes it sound like the awkward case — and it passes while
+    /// ZapfDingbats is the table that would have failed. Two panics have now
+    /// been fixed in this crate for exactly that shape (slatesplit-cli-kxv,
+    /// slatesplit-cli-esq), the second in a function nobody had checked the
+    /// same way as the first.
+    #[test]
+    fn only_zapfdingbats_needs_the_second_lookup() {
+        for (label, table, total, absent) in TABLES {
+            let names = names(table);
+            let missing = names
+                .iter()
+                .filter(|n| glyphnames::name_to_unicode(n).is_none())
+                .count();
+            assert_eq!(names.len(), *total, "{label}: name count moved");
+            assert_eq!(
+                missing, *absent,
+                "{label}: coverage by glyphnames moved — the matrix in this \
+                 module's doc comment is now wrong, fix one or the other"
+            );
+        }
+    }
+
+    /// THE PROPERTY THAT ACTUALLY MATTERS: after the fallback chain, every
+    /// name in every table resolves. A name that resolves in neither list has
+    /// no mapping at all, and the call sites that `.unwrap()` on one of these
+    /// lookups abort the whole document when that happens.
+    ///
+    /// So this is the guard on those call sites rather than on the tables:
+    /// while it passes, they are unreachable. If a future table carries a name
+    /// neither list knows, this fails HERE — with the table and the count —
+    /// instead of in a user's document.
+    #[test]
+    fn the_fallback_chain_resolves_every_name_in_every_table() {
+        for (label, table, _, _) in TABLES {
+            let unresolvable: Vec<&str> = names(table)
+                .into_iter()
+                .filter(|n| {
+                    glyphnames::name_to_unicode(n).is_none()
+                        && zapfglyphnames::zapfdigbats_names_to_unicode(n).is_none()
+                })
+                .collect();
+            assert!(
+                unresolvable.is_empty(),
+                "{label}: {} name(s) resolve in neither list: {unresolvable:?}",
+                unresolvable.len()
+            );
+        }
+    }
+
+    /// Every one of ZapfDingbats' 187 absentees is in the Zapf list — the
+    /// chain is exactly as wide as the gap, with nothing left over.
+    #[test]
+    fn the_zapf_list_covers_precisely_what_glyphnames_lacks() {
+        let covered = names(&ZAPFDINGBATS_ENCODING)
+            .into_iter()
+            .filter(|n| {
+                glyphnames::name_to_unicode(n).is_none()
+                    && zapfglyphnames::zapfdigbats_names_to_unicode(n).is_some()
+            })
+            .count();
+        assert_eq!(covered, 187);
+    }
+}

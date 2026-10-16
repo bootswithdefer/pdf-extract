@@ -59,18 +59,32 @@ indirect object is unusual. Worth fixing on the same principle as `477f87e`
 until something reproduces it. Do not claim it is a real-world bug without a
 sample.
 
-## 3. Operand-count asserts in the path operators — KNOWN, contested
+## 3. Operand-count asserts in the positioning operators — FIXED in `5401b23`
 
 ```rust
-assert!(operation.operands.len() == 6);   // x2
-assert!(operation.operands.len() == 2);   // x2
+assert!(operation.operands.len() == 6);   // "cm", "Tm"
+assert!(operation.operands.len() == 2);   // "Td", "TD"
 ```
 
-A content stream with a path operator missing operands aborts the document.
-This is precisely what upstream #148/#154/#158 are about. Same decision
-needed as the `Tj` arm, which was settled by taking the narrow fix
-(skip and log) in `3724aae` — and note the maintainer has pushed back on
-all three upstream attempts at the broad one.
+Taken the narrow way, same as the `Tj` arm in `3724aae`: skip the operation,
+warn, keep parsing. A fixture and generator went in with it
+(`make_position_operator_fixture.py`), asserting the text after the bad
+operators is still EXTRACTED rather than merely that nothing panicked.
+
+**This entry sat here as "KNOWN, contested" while it was the single largest
+cause of unreadable documents in a real corpus.** Classifying every failure
+across 182 PDFs found five of the seven unreadable ones aborting here — and
+found them by measurement, not by reading this file. Nobody had connected the
+documented defect to the documents it was breaking.
+
+The lesson is about this file rather than that bug: a finding recorded as
+"known" is not thereby costed. Before leaving one contested, point the thing
+at real input and count what it refuses. After the fix: unreadable 7 → 2, and
+all 177 other documents byte-for-byte identical.
+
+They were never "path" operators — `cm` is graphics state and the other three
+are text positioning. The title was wrong from the start, which is its own
+small argument for re-deriving a claim rather than inheriting it.
 
 ## 4. Type3 never merges its ToUnicode map into `encoding_table`
 
@@ -85,18 +99,25 @@ Recorded because two sessions independently flagged it as a suspect; if you
 are chasing a Type3 decode problem, rule the cache out first, and do not
 "fix" this expecting it to change behaviour.
 
-## 5. 115 abort sites, and a `Result` API that nothing uses
+## 5. 108 abort sites, and a `Result` API that nothing uses
 
-`panic!` 29, `.unwrap()` 48, `.expect(` 29, `assert!`/`assert_eq!` 8,
-`todo!` 1 — 115 in 2461 lines, about one every 21 lines. Recounted
-2026-10-13 by occurrence, not by matching line, which is why the totals
-differ slightly from the figures recorded earlier the same day:
+`panic!` 28, `.unwrap()` 46, `.expect(` 29, `assert!`/`assert_eq!` 4,
+`todo!` 1 — 108 in 2718 lines, about one every 25 lines. Recounted
+2026-10-15 after `kxv`, `esq` and `5401b23`; the previous figure was 115 in
+2461 lines on 2026-10-13. Counted by occurrence, not by matching line:
 
 ```sh
-for pat in 'panic!' '\.unwrap()' '\.expect(' 'assert!|assert_eq!' 'todo!'; do
-    grep -oE "$pat" src/lib.rs | wc -l
+for pat in 'panic!' '.unwrap()' '.expect('; do
+    grep -oF "$pat" src/lib.rs | wc -l      # -F: these are not regexes
 done
+grep -oE 'assert!|assert_eq!' src/lib.rs | wc -l
+grep -oF 'todo!' src/lib.rs | wc -l
 ```
+
+The original snippet used `grep -oE` for all five patterns, which fails on
+`.unwrap()` and `.expect(` — `()` is an empty group and `(` is unbalanced.
+Depending on the grep it errors or silently reports 0, so re-run it with `-F`
+for the literal patterns rather than trusting a number it produced.
 
 `extract_text` and friends already return `Result<String, OutputError>`, so
 the error channel exists; the parser simply never uses it for malformed

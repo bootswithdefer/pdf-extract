@@ -572,6 +572,11 @@ impl<'a> PdfSimpleFont<'a> {
                     }
                     encoding_table = Some(table)
                 } else if subtype == "TrueType" {
+                    // SAFE WHILE `encodings::coverage` PASSES. That test
+                    // asserts WIN_ANSI's 224 names are all known to
+                    // glyphnames; this unwrap is unreachable until one is not.
+                    // If it ever fires, fix the table or the list, not this
+                    // line (slatesplit-cli-kl6).
                     encoding_table = Some(encodings::WIN_ANSI_ENCODING.iter()
                         .map(|x| if let &Some(x) = x { glyphnames::name_to_unicode(x).unwrap() } else { 0 })
                         .collect());
@@ -657,8 +662,25 @@ impl<'a> PdfSimpleFont<'a> {
                             // -1 is "not encoded"
                             if w.0 != -1 {
                                 table[w.0 as usize] = if base_name == "ZapfDingbats" {
+                                    // Deliberate abort, not an oversight, and
+                                    // guarded by `encodings::coverage`: every
+                                    // ZapfDingbats name resolves in the Zapf
+                                    // list, so this is unreachable. Left as a
+                                    // panic rather than degraded to 0 because
+                                    // nothing has ever reached it; if a
+                                    // document ever does, that is news worth
+                                    // hearing (slatesplit-cli-kl6).
                                     zapfglyphnames::zapfdigbats_names_to_unicode(w.2).unwrap_or_else(|| panic!("bad name {:?}", w))
                                 } else {
+                                    // The non-Zapf half of the same branch.
+                                    // Reachable only if a CORE FONT's metrics
+                                    // carry a name glyphnames lacks — which
+                                    // the coverage test cannot rule out, since
+                                    // it checks the ENCODING TABLES and this
+                                    // reads font metrics. The nearest
+                                    // equivalent with an /Encoding was fixed
+                                    // in slatesplit-cli-esq; this arm has not
+                                    // been seen to fire (slatesplit-cli-kl6).
                                     glyphnames::name_to_unicode(w.2).unwrap()
                                 }
                             }
