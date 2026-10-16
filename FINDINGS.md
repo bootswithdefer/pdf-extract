@@ -140,40 +140,55 @@ webserver. The other three point at web.archive.org.
 Fuzzing (now set up) is a better bug-finder here than corpus growth; corpus
 work is mainly about CI determinism.
 
-## 7. Trap: `examples/extract` is not a safe oracle
+## 7. `examples/extract` was not a safe oracle — FIXED (slatesplit-cli-r8v)
 
-Not a library bug, but it has now misled two sessions in different ways. If
-you are reaching for this example as a quick check, read all three.
+Not a library bug, but it had misled two sessions in different ways. All three
+hazards below are now fixed; they are kept here because the REASONS are still
+worth reading before trusting any oracle, and because the middle one is not
+fully fixable in the example.
 
-**It writes `<name>.<kind>` into the current directory.** Running it from
-inside a checkout drops the extracted text next to your source. When
-validating against a real document — bank statements, anything private — that
-silently writes the contents into the repo. Root `.gitignore` has `/*.txt`, so
-it will not be committed, but it is still sitting on disk. Run it from a
-scratch directory and clear it afterwards. One such run left a real mortgage
-statement in `/tmp` for roughly forty minutes.
+**What changed.** The output path is now REQUIRED — there is no derived
+default to be surprised by — and both discarded `Result`s are reported with a
+non-zero exit. `Document::load` reports instead of panicking.
 
-**Stdout is not the extraction.** Stdout carries only the filename and
-`print_metadata(&doc)`. The text goes to the output file. Measuring stdout and
-believing it to be the extraction produced a figure 3x too small and a
-confident "confirmed clean" that happened to be right for the wrong reason.
-Measure the output file.
+**Why the output path is required rather than defaulted somewhere better.**
+There is no better default. Writing beside the INPUT puts extracted text into
+the directory the private documents live in. Writing to STDOUT is worse again
+for the common case here, an automated agent whose stdout is a transcript it
+cannot purge — that exact mistake put a counterparty name and an employer name
+into one (slatesplit-cli-ywx). Naming the destination is the only option that
+makes the choice conscious.
 
-**Exit 0 does not mean the extraction completed.** The last line is:
+**It wrote `<name>.<kind>` into the current directory.** FIXED. Running it
+from inside a checkout dropped the extracted text next to your source; against
+a real document that silently wrote the contents into the repo. Root
+`.gitignore` has `/*.txt`, so it would not be committed, but it was still
+sitting on disk. One such run left a real mortgage statement in `/tmp` for
+roughly forty minutes. Whatever path you now pass, clear it afterwards.
+
+**Stdout is still not the extraction, and this one is NOT fixed** — it is
+inherent to what the example is. Stdout carries `print_metadata(&doc)`; the
+text goes to the output file. Measuring stdout and believing it to be the
+extraction produced a figure 3x too small and a confident "confirmed clean"
+that happened to be right for the wrong reason. Measure the output file.
+
+**Exit 0 did not mean the extraction completed.** FIXED. The last line was:
 
 ```rust
 output_doc(&doc, output.as_mut());
 ```
 
-The `Result` is discarded outright — not even `let _ =`. A mid-document error
-is swallowed, and you get a short output file and a clean exit with nothing on
-stderr. `doc.decrypt("")` above it drops its result the same way, and
-`Document::load(path).unwrap()` panics rather than reporting.
+The `Result` was discarded outright — not even `let _ =`. A mid-document error
+was swallowed, and you got a short output file and a clean exit with nothing
+on stderr. `doc.decrypt("")` dropped its result the same way, so a failed
+decrypt looked like a successful one, and `Document::load(path).unwrap()`
+panicked rather than reporting. All three now report and exit non-zero, and a
+failed extraction says the output file may be PARTIAL.
 
-So the example can only tell you that nothing *panicked*. To establish that a
-document extracted fully, compare the output length against an independent
-path — `extract_text_from_mem` is the obvious one — rather than trusting the
-exit status.
+A non-zero exit is now meaningful. A ZERO exit still is not proof of a full
+extraction — `output_doc` returning `Ok` only means nothing it checks went
+wrong. To establish that a document extracted fully, compare the output length
+against an independent path, such as `extract_text_from_mem`.
 
 ## 8. Run segmentation vs pdf.js — MISATTRIBUTED, mostly not this library
 
