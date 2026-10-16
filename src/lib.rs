@@ -427,28 +427,56 @@ impl<'a> PdfSimpleFont<'a> {
                     dlog!("font file {}, {:?}", subtype, s);
                     let s = get_contents(s);
                     if subtype == "Type1C" {
-                        let table = cff_parser::Table::parse(&s).unwrap();
-                        //use std::io::Write;
-                        //File::create(format!("/tmp/{}", base_name)).unwrap().write_all(&s);
-                        
-                        let encoding = table.encoding.get_code_to_sid_table(&table.charset);
+                        // An embedded CFF that will not parse used to abort the
+                        // WHOLE DOCUMENT. It is one font program among several,
+                        // and there is already a fallback immediately below:
+                        // leaving unicode_map as None sends this font to
+                        // get_unicode_map, i.e. its own /ToUnicode. So a bad
+                        // font program costs that font's CFF-derived names, not
+                        // the document (slatesplit-cli-62l).
+                        match cff_parser::Table::parse(&s) {
+                            Some(table) => {
+                                let encoding = table.encoding.get_code_to_sid_table(&table.charset);
 
-                        let mapping: HashMap<u32, String> = encoding.into_iter().filter_map(|(cid, sid)| {
-                            let name = cff_parser::string_by_id(&table, sid).unwrap();
-                            if name == ".notdef" {
-                                return None;
+                                let mapping: HashMap<u32, String> = encoding.into_iter().filter_map(|(cid, sid)| {
+                                    // A SID with no string is a broken index
+                                    // into the font's own name table. Skip the
+                                    // glyph, the same as .notdef.
+                                    let name = match cff_parser::string_by_id(&table, sid) {
+                                        Some(name) => name,
+                                        None => {
+                                            warn!("CFF string id {:?} has no name, skipping glyph", sid);
+                                            return None;
+                                        }
+                                    };
+                                    if name == ".notdef" {
+                                        return None;
+                                    }
+                                    let unicode = glyphnames::name_to_unicode(&name).or_else(|| {
+                                        zapfglyphnames::zapfdigbats_names_to_unicode(name)
+                                    });
+                                    let Some(unicode) = unicode else {
+                                        warn!("Couldn't find unicode for {}", name);
+                                        return None;
+                                    };
+                                    // A lone surrogate is not a string. The
+                                    // crate already carries a fixture for that
+                                    // shape on the ToUnicode path; here it
+                                    // drops the glyph rather than the document.
+                                    match String::from_utf16(&[unicode]) {
+                                        Ok(str) => Some((cid as u32, str)),
+                                        Err(_) => {
+                                            warn!("glyph {} maps to an unpaired surrogate, skipping", name);
+                                            None
+                                        }
+                                    }
+                                }).collect();
+                                unicode_map = Some(mapping);
                             }
-                            let unicode = glyphnames::name_to_unicode(&name).or_else(|| {
-                                zapfglyphnames::zapfdigbats_names_to_unicode(name)
-                            });
-                            if unicode.is_none() {
-                                warn!("Couldn't find unicode for {}", name);
-                                return None;
+                            None => {
+                                warn!("embedded Type1C font did not parse; falling back to its /ToUnicode");
                             }
-                            let str = String::from_utf16(&[unicode.unwrap()]).unwrap();
-                            Some((cid as u32, str))
-                        }).collect();
-                        unicode_map = Some(mapping);
+                        }
                     }
 
                     //
@@ -986,7 +1014,35 @@ fn get_unicode_map<'a>(doc: &'a Document, font: &'a Dictionary) -> Option<HashMa
             let contents = get_contents(stream);
             dlog!("Stream: {}", String::from_utf8(contents.clone()).unwrap());
 
-            let cmap = adobe_cmap_parser::get_unicode_map(&contents).unwrap();
+            // CONTAINED AT OUR BOUNDARY, deliberately, because the panic is
+            // not ours to fix. adobe-cmap-parser panics outright on a
+            // malformed hexstring (its lib.rs:213), and a /ToUnicode stream is
+            // untrusted input we cannot validate before handing it over. One
+            // such CMap in the wild made an entire bank statement unreadable
+            // (slatesplit-cli-62l).
+            //
+            // The fallback is well defined and already the normal case for
+            // most fonts: no ToUnicode map. Characters then decode through the
+            // encoding table, which is what a font without the stream does.
+            //
+            // THE TWO HONEST LIMITS: this does nothing under panic=abort, and
+            // catching across a crate boundary is a containment measure rather
+            // than a fix — the right repair is upstream in adobe-cmap-parser,
+            // or a fork of it, and either is a bigger decision than this file.
+            let parsed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                adobe_cmap_parser::get_unicode_map(&contents)
+            }));
+            let cmap = match parsed {
+                Ok(Ok(cmap)) => cmap,
+                Ok(Err(e)) => {
+                    warn!("ToUnicode CMap did not parse ({:?}); font falls back to its encoding table", e);
+                    return None;
+                }
+                Err(_) => {
+                    warn!("ToUnicode CMap parser panicked; font falls back to its encoding table");
+                    return None;
+                }
+            };
             let mut unicode = HashMap::new();
             // "It must use the beginbfchar, endbfchar, beginbfrange, and endbfrange operators to
             // define the mapping from character codes to Unicode character sequences expressed in
